@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Retry",
+    "description": "Retry the last failed or interrupted assistant turn. The shortcut is editable in Settings."
+  }
+}
