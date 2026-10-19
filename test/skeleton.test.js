@@ -34,6 +34,17 @@ test('host entry exposes a Cordis plugin shape', () => {
   assert.ok(Array.isArray(host.inject));
 });
 
+test('host Config, when present, follows the standard-schema contract cordis validates', () => {
+  // cordis 的 resolveConfig 在插件导出 Config 时调用 Config['~standard'].validate(config)；
+  // 缺少该校验入口的对象会让插件在激活阶段抛 TypeError，fiber 停在失败状态。本插件没有
+  // 配置字段，当前不导出 Config；以后加字段时导出真实 schemastery schema 即可满足。
+  if (host.Config === undefined) return;
+  const standard = host.Config['~standard'];
+  assert.equal(standard?.version, 1);
+  assert.equal(typeof standard.validate, 'function');
+  assert.deepEqual(standard.validate({}), { value: {} });
+});
+
 test('manifest carries the fields the client module loader reads', () => {
   assert.equal(manifest.name, 'dsh-retry');
   assert.equal(manifest.exports['./client'], './client.js');
