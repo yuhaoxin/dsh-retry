@@ -16,7 +16,8 @@ import {
   retryTurnBoundarySchema,
   runRetry,
 } from '../src/host/retry.js';
-import { installRetry, loadUserMessageFactory } from '../index.js';
+import { installRetry } from '../index.js';
+import { createUserMessage } from '../src/host/user-message.js';
 
 /** 造一条只带边界字段的会话事件。 */
 function turnStart(turn) {
@@ -206,15 +207,27 @@ test('createRetryCommand 的命令名与描述符合注册契约', () => {
   assert.equal(typeof command.handler, 'function');
 });
 
-test('loadUserMessageFactory 在模块解析失败时抛出指明模块的错误', async () => {
-  await assert.rejects(
-    loadUserMessageFactory(() => Promise.reject(new Error('MODULE_NOT_FOUND'))),
-    /@deepseek-ai\/dsh-llm/,
-  );
-});
+test('createUserMessage 满足会话层对 user/message 的四要素校验', () => {
+  const message = createUserMessage({
+    content: [{ type: 'text', text: 'hi' }],
+    source: { kind: 'cordis-host-runner' },
+  });
 
-test('loadUserMessageFactory 在模块缺少 createUserMessage 时抛错', async () => {
-  await assert.rejects(loadUserMessageFactory(() => Promise.resolve({})), /createUserMessage/);
+  // dsh-session 的 assertMessageEventShape 只校验这四项。
+  assert.equal(typeof message.id, 'string');
+  assert.ok(message.id.length > 0);
+  assert.equal(message.role, 'user');
+  assert.equal(typeof message.source.kind, 'string');
+  assert.ok(message.source.kind.length > 0);
+  assert.ok(Array.isArray(message.content));
+
+  // 与官方构造器一样冻结，且不共享入参引用。
+  assert.ok(Object.isFrozen(message));
+  assert.ok(Object.isFrozen(message.content));
+  assert.notEqual(
+    createUserMessage({ content: [], source: { kind: 'cordis-host-runner' } }).id,
+    message.id,
+  );
 });
 
 test('installRetry 先注册投影再注册命令，且 handler 走同一套判定', () => {
