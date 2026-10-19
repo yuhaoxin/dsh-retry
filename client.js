@@ -17,7 +17,7 @@
 const NS = 'dsh-retry';
 
 /**
- * 本插件注册的快捷键动作；设置页只列这些行。
+ * 本插件注册的快捷键动作；配置页只列这些行。
  *
  * ponytail: 录制与手输都写第一个动作。当前只有一个动作够用；出现第二个可改键动作时，
  * 录制状态要带上目标行 id，不能再用下标。
@@ -85,9 +85,9 @@ const en = {
 };
 
 /**
- * 把快捷键目录裁剪成设置页的行。
+ * 把快捷键目录裁剪成配置页的行。
  *
- * catalog 行来自 `ctx.shortcuts.catalog.getSnapshot()`，包含全部已注册命令；设置页只保留
+ * catalog 行来自 `ctx.shortcuts.catalog.getSnapshot()`，包含全部已注册命令；配置页只保留
  * 本插件声明的动作。冲突 id 在同一份目录里换成可读名字，找不到时保留 id。
  *
  * @param {Array<{ id: string, label: string, keys: string[], modified: boolean, issue: string|null, conflicts: string[] }>} catalog
@@ -363,11 +363,15 @@ function createSettingsView(React, { t, shortcuts }) {
   };
 
   /**
-   * 设置页内容：动作行 + 录制 / 手输 / 恢复默认 / 解除绑定。
+   * 配置页内容：动作行 + 录制 / 手输 / 恢复默认 / 解除绑定。
    *
+   * 插件管理器按 `view` 分发两种形态：`summary` 是插件列表页的一行摘要，`page` 是
+   * 插件详情页的完整表单。`summary` 只渲染当前键位，避免列表页被完整表单撑开。
+   *
+   * @param {{ view?: 'summary' | 'page' }} props 插件管理器传入的视图形态。
    * @returns {object} 页面元素。
    */
-  return function ShortcutSettingsSection() {
+  return function ShortcutSettingsSection({ view } = {}) {
     const catalog = useSnapshot(shortcuts.catalog);
     const config = useSnapshot(shortcuts.config);
     const [recording, setRecording] = React.useState(false);
@@ -512,6 +516,13 @@ function createSettingsView(React, { t, shortcuts }) {
       config.status === 'ready'
         ? null
         : h('p', { style: hintStyle, role: 'status' }, t(`settings.status.${config.status === 'loading' ? 'loading' : 'unreadable'}`));
+
+    // 插件列表页只给一行摘要，完整表单只在详情页渲染。
+    if (view === 'summary') {
+      const row = shortcutRows(catalog)[0];
+      const keys = row === undefined || row.keys.length === 0 ? t('settings.unbound') : row.keys.join(' ');
+      return h('p', { style: hintStyle }, row === undefined ? t('settings.intro') : `${row.label} · ${keys}`);
+    }
 
     return h(
       'section',

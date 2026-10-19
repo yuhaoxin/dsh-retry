@@ -98,9 +98,9 @@ function makeReact() {
     },
     useEffect() {},
     /** 渲染一次组件并返回元素树。 */
-    render(component) {
+    render(component, props = {}) {
       cursor = 0;
-      return component();
+      return component(props);
     },
   };
 }
@@ -268,7 +268,8 @@ function renderPage(options = {}) {
   const injected = context.sections.find((entry) => entry.key === 'plugins.bundle.config' && entry.callback !== undefined);
   injected.callback();
   const { component } = context.sections.find((entry) => entry.options !== undefined);
-  return { tree: React.render(component), React, component, calls: context.calls, render: () => React.render(component) };
+  const render = (props = options.props ?? {}) => React.render(component, props);
+  return { tree: render(), React, component, calls: context.calls, render };
 }
 
 test('page renders the action row with keys, modified badge, conflict and issue hints', () => {
@@ -513,4 +514,15 @@ test('recordedBinding ignores bare modifier presses and normalizes through descr
     }),
     { error: 'unsupported-key' },
   );
+});
+
+test('summary 视图只渲染一行摘要，不渲染完整表单', () => {
+  const { tree } = renderPage({ catalog: [CATALOG[0]], props: { view: 'summary' } });
+
+  const text = textOf(tree);
+  // 摘要包含动作名与键位，但不含录制按钮等完整表单元素。
+  assert.match(text, /重试上一回合/);
+  assert.match(text, /⌥\s*R/);
+  assert.equal(findElements(tree, 'li').length, 0);
+  assert.equal(findElements(tree, 'input').length, 0);
 });
