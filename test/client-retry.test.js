@@ -14,6 +14,8 @@ await import('../client.js');
 
 const SESSION_ID = 'session-1';
 const REQUIRED_SERVICES = ['shortcuts', 'sessions', 'remote', 'remote.commands', 'locale'];
+/** 设置页走独立子注入，slots 不在主注入里。 */
+const SETTINGS_SERVICES = ['slots'];
 
 /**
  * 假客户端上下文：effect 立即执行回调，ctx.inject 立即把所需服务交给插件体。
@@ -72,11 +74,36 @@ function makeContext({ hasSession = true, execute } = {}) {
       };
     },
   };
+  const sections = [];
+  // 真实的 slots.inject 只在设置壳声明槽位后才同步跑回调；替身只记录，测试里手动触发，
+  // 这样默认的 factory(require) 仍可保持「不解析浏览器模块」。
+  const slots = {
+    inject(key, callback) {
+      sections.push({ key, callback });
+      return () => {};
+    },
+    register(options, component) {
+      sections.push({ key: options.name, options, component });
+      return () => {};
+    },
+  };
   const effect = (callback, label) => {
     effects.push(label);
     return callback();
   };
-  const scoped = { shortcuts, sessions, remote, locale, effect };
+  const scoped = {
+    shortcuts,
+    sessions,
+    remote,
+    locale,
+    effect,
+    slots,
+    // 设置页走独立子注入：把 slots 交给回调，与真实 cordis 的 scope.inject 同形。
+    inject(deps, callback) {
+      injections.push(deps);
+      callback({ slots });
+    },
+  };
   const ctx = {
     effect,
     inject(deps, callback) {
@@ -91,6 +118,8 @@ function makeContext({ hasSession = true, execute } = {}) {
     registrations,
     effects,
     calls,
+    sections,
+    shortcuts,
     setLocale(id) {
       activeLocale = id;
     },
@@ -114,9 +143,14 @@ test('registers retry.lastTurn with desktop-only Alt+R defaults, page/editable r
   const { ctx, injections, registrations, effects } = makeContext();
   makePlugin().apply(ctx);
 
-  assert.equal(injections.length, 1);
+  assert.equal(injections.length, 2);
   for (const service of REQUIRED_SERVICES) {
     assert.ok(injections[0].includes(service), `ctx.inject must request ${service}`);
+  }
+  // slots 必须只在子注入里：渲染层缺失时重试动作仍要可用。
+  assert.ok(!injections[0].includes('slots'), 'main injection must not require slots');
+  for (const service of SETTINGS_SERVICES) {
+    assert.ok(injections[1].includes(service), `nested injection must request ${service}`);
   }
   assert.deepEqual(effects, ['dsh-retry: dictionaries', 'dsh-retry: retry.lastTurn']);
   assert.equal(registrations.length, 1);
