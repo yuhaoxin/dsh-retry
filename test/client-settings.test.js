@@ -21,7 +21,6 @@ const internals = plugin.internals;
 function makeT(lang = 'zh') {
   const dictionaries = {
     zh: {
-      'settings.nav': '重试快捷键',
       'settings.title': '重试快捷键',
       'settings.intro': '设置按键',
       'settings.modified': '已修改',
@@ -45,7 +44,6 @@ function makeT(lang = 'zh') {
       'settings.issue.reserved': '该组合被系统或编辑器占用',
     },
     en: {
-      'settings.nav': 'Retry shortcuts',
       'settings.title': 'Retry shortcuts',
       'settings.intro': 'Choose the key',
       'settings.modified': 'Customized',
@@ -164,27 +162,13 @@ function makeContext({ recording, edit, catalog = [], config = { revision: 'rev-
       return () => {};
     },
   };
-  const scoped = {
+  const ctx = {
     shortcuts,
     sessions: { list: { getSnapshot: () => ({ byId: {} }) } },
     remote: { commands: { execute: async () => ({ ok: true, value: {} }) } },
     locale: { register: () => () => {}, bind: () => makeT() },
     slots,
     effect: (callback) => callback(),
-    // 设置页走独立子注入，与真实 cordis 的 scope.inject 同形。
-    inject(deps, callback) {
-      callback({ slots });
-    },
-  };
-  const ctx = {
-    effect: (callback) => callback(),
-    // slots 走可选读取：apply 时探测 ctx.get('slots')。
-    get(name) {
-      return name === 'slots' ? slots : undefined;
-    },
-    inject(deps, callback) {
-      callback(scoped);
-    },
   };
   return { ctx, sections, shortcuts, calls };
 }
@@ -209,7 +193,7 @@ const CATALOG = [
   { id: 'someone.else', label: '别的动作', keys: ['⌘', 'K'], modified: false, issue: null, conflicts: [] },
 ];
 
-test('settings.section registration carries the page contract', () => {
+test('plugins.bundle.config registration carries the page contract', () => {
   const { ctx, sections } = makeContext();
   const React = { createElement: () => null, useSyncExternalStore: () => undefined };
   const requested = [];
@@ -221,19 +205,18 @@ test('settings.section registration carries the page contract', () => {
     })
     .apply(ctx);
 
-  const injected = sections.find((entry) => entry.key === 'settings.section' && entry.callback !== undefined);
-  assert.ok(injected, 'client must wait for the settings.section declaration');
+  const injected = sections.find((entry) => entry.key === 'plugins.bundle.config' && entry.callback !== undefined);
+  assert.ok(injected, 'client must wait for the plugins.bundle.config declaration');
   assert.deepEqual(requested, [], 'no browser module is resolved before the slot exists');
 
   injected.callback();
 
   const registration = sections.find((entry) => entry.options !== undefined);
-  assert.ok(registration, 'settings.section must register a page');
-  assert.equal(registration.options.name, 'settings.section');
-  assert.equal(registration.options.id, 'dsh-retry');
-  assert.equal(registration.options.order, 60);
+  assert.ok(registration, 'plugins.bundle.config must register a page');
+  assert.equal(registration.options.name, 'plugins.bundle.config');
+  // keyed 槽位按包名分发：插件管理器用 entryKey = pkg.name 取本包配置页。
+  assert.equal(registration.options.key, 'dsh-retry');
   assert.equal(registration.options.locale, 'dsh-retry');
-  assert.equal(registration.options.label(), '重试快捷键');
   assert.equal(typeof registration.component, 'function');
   // react 只在槽位声明出现后才解析，注册路径不依赖渲染层。
   assert.deepEqual(requested, ['react']);
@@ -282,7 +265,7 @@ function renderPage(options = {}) {
     })
     .apply(context.ctx);
 
-  const injected = context.sections.find((entry) => entry.key === 'settings.section' && entry.callback !== undefined);
+  const injected = context.sections.find((entry) => entry.key === 'plugins.bundle.config' && entry.callback !== undefined);
   injected.callback();
   const { component } = context.sections.find((entry) => entry.options !== undefined);
   return { tree: React.render(component), React, component, calls: context.calls, render: () => React.render(component) };

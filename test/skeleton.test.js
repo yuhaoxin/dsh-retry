@@ -25,7 +25,8 @@ test('client bundle registers under the package name and returns a Cordis plugin
     throw new Error('skeleton loads no modules');
   });
   assert.equal(typeof plugin.apply, 'function');
-  assert.deepEqual(plugin.inject, []);
+  // 依赖全部声明在插件上：cordis 在服务齐备前不调 apply，缺服务时加载器把条目报成等待中。
+  assert.deepEqual(plugin.inject, ['shortcuts', 'sessions', 'remote', 'remote.commands', 'locale', 'slots']);
 });
 
 test('host entry exposes a Cordis plugin shape', () => {

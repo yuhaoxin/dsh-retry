@@ -5,9 +5,10 @@
  * 动作随快捷键目录出现在「设置」→「通用」→「快捷键」，改键、落盘与冲突提示都由
  * ctx.shortcuts 注册表负责。
  *
- * 另外注册 settings.section 页面「重试快捷键」：列出本插件动作的当前键位、修改标记、
- * 冲突与非法提示，并提供录制 / 手动输入 / 恢复默认 / 解除绑定。页面逻辑分两层：
- * 行数据、edit 参数、录制降级、状态文案都是纯函数，React 渲染只负责把结果画出来。
+ * 另外在插件自己的配置页（`plugins.bundle.config`，按包名 `dsh-retry` 分发）里提供
+ * 「重试快捷键」：列出本插件动作的当前键位、修改标记、冲突与非法提示，并提供录制 /
+ * 手动输入 / 恢复默认 / 解除绑定。页面逻辑分两层：行数据、edit 参数、录制降级、
+ * 状态文案都是纯函数，React 渲染只负责把结果画出来。
  *
  * 仓库没有构建步骤，client.js 以 classic script 形式由加载器执行，因此不能写 ESM export；
  * 纯逻辑挂在插件对象的 `internals` 上供 node:test 断言，浏览器加载器只读 `id` 与 `factory`。
@@ -27,7 +28,6 @@ const SHORTCUT_IDS = ['retry.lastTurn'];
 const zh = {
   'shortcut.retryLastTurn': '重试上一回合',
   'shortcut.noSession': '当前没有主会话，无法重试',
-  'settings.nav': '重试快捷键',
   'settings.title': '重试快捷键',
   'settings.intro': '设置「重试上一回合」的按键。桌面端直接按键录制，浏览器端手动输入组合。',
   'settings.modified': '已修改',
@@ -57,7 +57,6 @@ const zh = {
 const en = {
   'shortcut.retryLastTurn': 'Retry last turn',
   'shortcut.noSession': 'No main conversation to retry',
-  'settings.nav': 'Retry shortcuts',
   'settings.title': 'Retry shortcuts',
   'settings.intro': 'Choose the key for “Retry last turn”. Desktop records the keys; in a browser type the combination.',
   'settings.modified': 'Customized',
@@ -304,14 +303,15 @@ function recordedBinding(shortcuts, event) {
 }
 
 /**
- * 构建设置页 React 组件。
+ * 构建插件配置页 React 组件。
  *
  * 组件只做渲染与事件接线：目录、配置快照直接订阅 ctx.shortcuts 的两个 store，
- * 提交逻辑全部走上面的纯函数。
+ * 提交逻辑全部走上面的纯函数。插件管理器以 `{ view: 'page' }` 分发本页，因此
+ * 没有摘要态分支。
  *
  * @param {object} React - 平台注入的 react 实例。
  * @param {{ t: Function, shortcuts: object }} deps - 词典与快捷键服务。
- * @returns {Function} settings.section 组件。
+ * @returns {Function} plugins.bundle.config 组件。
  */
 function createSettingsView(React, { t, shortcuts }) {
   const { createElement: h } = React;
@@ -557,80 +557,73 @@ window.__ModuleLoader__.load({
   id: 'dsh-retry',
   factory(require) {
     return {
-      inject: [],
+      // 全部依赖都声明在插件上：cordis 在服务齐备前不调 apply，缺服务时加载器把条目报成
+      // 等待中，而不是让 apply 半途静默跳过。client 半身只跑在 web，slots 由 ui-renderer
+      // 提供，其余四个由会话 / 命令 / 词典服务提供。
+      inject: ['shortcuts', 'sessions', 'remote', 'remote.commands', 'locale', 'slots'],
       /** 纯逻辑句柄：无构建步骤，node:test 从这里断言行数据、edit 参数与降级判断。 */
       internals: { shortcutRows, shortcutEdit, beginRecording, feedbackFor, parseBindingText, recordedBinding, SHORTCUT_IDS },
       apply(ctx) {
-        ctx.inject(['shortcuts', 'sessions', 'remote', 'remote.commands', 'locale'], (scope) => {
-          scope.effect(() => scope.locale.register(NS, { zh, en }), 'dsh-retry: dictionaries');
-          const t = scope.locale.bind(NS);
+        ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-retry: dictionaries');
+        const t = ctx.locale.bind(NS);
 
-          /**
-           * 触发 Host /retry。run 是 fire-and-forget，失败在控制台报告：
-           * 命令未被 Host 注册、或调用被拒绝，都不会让按键处理器抛错。
-           */
-          const retryLastTurn = async (sessionId) => {
-            const result = await scope.remote.commands.execute(sessionId, '/retry', []);
-            if (!result.ok) throw new Error(`/retry rejected: ${result.error.code}: ${result.error.message}`);
-            if (result.value === undefined) throw new Error('/retry is not registered by the Host half');
-          };
+        /**
+         * 触发 Host /retry。run 是 fire-and-forget，失败在控制台报告：
+         * 命令未被 Host 注册、或调用被拒绝，都不会让按键处理器抛错。
+         */
+        const retryLastTurn = async (sessionId) => {
+          const result = await ctx.remote.commands.execute(sessionId, '/retry', []);
+          if (!result.ok) throw new Error(`/retry rejected: ${result.error.code}: ${result.error.message}`);
+          if (result.value === undefined) throw new Error('/retry is not registered by the Host half');
+        };
 
-          scope.effect(
-            () =>
-              scope.shortcuts.register({
-                id: 'retry.lastTurn',
-                label: () => t('shortcut.retryLastTurn'),
-                aliases: ['retry'],
-                // 只声明 desktop 三平台：web 的白名单没有 alt+r；无修饰键组合在 desktop:linux
-                // 与全部 web 平台被 modifier-required 拒绝，而 register() 会逐个校验已声明平台。
-                defaults: {
-                  'desktop:macos': { code: 'KeyR', modifiers: ['alt'] },
-                  'desktop:windows': { code: 'KeyR', modifiers: ['alt'] },
-                  'desktop:linux': { code: 'KeyR', modifiers: ['alt'] },
-                },
-                // 终端区不抢键：注册表在 terminal 区放行 Ctrl+W、Ctrl+R 这类组合。
-                regions: ['page', 'editable'],
-                modals: [],
-                resolve: () => {
-                  const sessionId = mainSessionId(scope);
-                  if (sessionId === undefined) {
-                    return { status: 'blocked', reason: t('shortcut.noSession') };
-                  }
-                  return {
-                    status: 'handled',
-                    run: () => {
-                      retryLastTurn(sessionId).catch((error) => {
-                        console.warn('dsh-retry: /retry request failed:', error);
-                      });
-                    },
-                  };
-                },
-              }),
-            'dsh-retry: retry.lastTurn',
+        ctx.effect(
+          () =>
+            ctx.shortcuts.register({
+              id: 'retry.lastTurn',
+              label: () => t('shortcut.retryLastTurn'),
+              aliases: ['retry'],
+              // 只声明 desktop 三平台：web 的白名单没有 alt+r；无修饰键组合在 desktop:linux
+              // 与全部 web 平台被 modifier-required 拒绝，而 register() 会逐个校验已声明平台。
+              defaults: {
+                'desktop:macos': { code: 'KeyR', modifiers: ['alt'] },
+                'desktop:windows': { code: 'KeyR', modifiers: ['alt'] },
+                'desktop:linux': { code: 'KeyR', modifiers: ['alt'] },
+              },
+              // 终端区不抢键：注册表在 terminal 区放行 Ctrl+W、Ctrl+R 这类组合。
+              regions: ['page', 'editable'],
+              modals: [],
+              resolve: () => {
+                const sessionId = mainSessionId(ctx);
+                if (sessionId === undefined) {
+                  return { status: 'blocked', reason: t('shortcut.noSession') };
+                }
+                return {
+                  status: 'handled',
+                  run: () => {
+                    retryLastTurn(sessionId).catch((error) => {
+                      console.warn('dsh-retry: /retry request failed:', error);
+                    });
+                  },
+                };
+              },
+            }),
+          'dsh-retry: retry.lastTurn',
+        );
+
+        // 插件管理器在插件详情页渲染 plugins.bundle.config，按包名 key 分发本包自己的
+        // 配置页。槽位由插件管理器声明，声明出现后才注册；react 到这一步才解析，模块
+        // 工厂不会因缺少 react 而失败。
+        ctx.slots.inject('plugins.bundle.config', () => {
+          const React = require('react');
+          return ctx.slots.register(
+            {
+              name: 'plugins.bundle.config',
+              key: 'dsh-retry',
+              locale: NS,
+            },
+            createSettingsView(React, { t, shortcuts: ctx.shortcuts }),
           );
-
-          // settings.section 由设置壳声明；声明出现后才注册页面。react 到这一步才解析：
-          // 非 web 环境不加载渲染层，模块工厂也不会因缺少 react 而失败。
-          //
-          // slots 用可选读取而不是主 inject：cordis 的插件 inject 是硬门禁，把 slots 列为
-          // 必需会让没有渲染层的部署连 retry.lastTurn 都不注册。这里在 apply 时探测一次，
-          // 缺失就只失去设置页，重试动作照常可用。
-          const slots = ctx.get('slots');
-          if (slots !== undefined) {
-            slots.inject('settings.section', () => {
-              const React = require('react');
-              return slots.register(
-                {
-                  name: 'settings.section',
-                  id: 'dsh-retry',
-                  order: 60,
-                  label: () => t('settings.nav'),
-                  locale: NS,
-                },
-                createSettingsView(React, { t, shortcuts: scope.shortcuts }),
-              );
-            });
-          }
         });
       },
     };

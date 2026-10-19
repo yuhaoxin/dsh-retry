@@ -14,15 +14,14 @@ await import('../client.js');
 
 const SESSION_ID = 'session-1';
 const REQUIRED_SERVICES = ['shortcuts', 'sessions', 'remote', 'remote.commands', 'locale'];
-/** 设置页走独立子注入，slots 不在主注入里。 */
+/** apply 里用到的服务，连同 slots 一起声明在插件对象的 inject 上。 */
 
 /**
- * 假客户端上下文：effect 立即执行回调，ctx.inject 立即把所需服务交给插件体。
+ * 假客户端上下文：effect 立即执行回调；服务由插件级 inject 声明，直接挂在 ctx 上。
  * @param {{ hasSession?: boolean, execute?: Function }} options - 会话目录与 Remote 命令的替身。
  */
 function makeContext({ hasSession = true, execute } = {}) {
   const sessionId = hasSession ? SESSION_ID : undefined;
-  const injections = [];
   const registrations = [];
   const effects = [];
   const calls = [];
@@ -97,27 +96,18 @@ function makeContext({ hasSession = true, execute } = {}) {
     locale,
     effect,
     slots,
-    // 设置页走独立子注入：把 slots 交给回调，与真实 cordis 的 scope.inject 同形。
-    inject(deps, callback) {
-      injections.push(deps);
-      callback({ slots });
-    },
   };
   const ctx = {
+    shortcuts,
+    sessions,
+    remote,
+    locale,
     effect,
-    // slots 走可选读取：apply 时探测 ctx.get('slots')。
-    get(name) {
-      return name === 'slots' ? slots : undefined;
-    },
-    inject(deps, callback) {
-      injections.push(deps);
-      callback(scoped);
-    },
+    slots,
   };
 
   return {
     ctx,
-    injections,
     registrations,
     effects,
     calls,
@@ -135,23 +125,19 @@ function makePlugin() {
   });
 }
 
-test('client bundle registers under the package name with no eager service injection', () => {
+test('client bundle declares every service on the plugin so cordis gates activation', () => {
   assert.equal(loaded.id, 'dsh-retry');
   const plugin = makePlugin();
-  assert.deepEqual(plugin.inject, []);
+  // 声明式依赖：服务未就绪时 apply 不跑，加载器把条目报成等待中，
+  // 配置页不会因为 apply 半途跳过而永久缺席。
+  assert.deepEqual(plugin.inject, [...REQUIRED_SERVICES, 'slots']);
   assert.equal(typeof plugin.apply, 'function');
 });
 
 test('registers retry.lastTurn with desktop-only Alt+R defaults, page/editable regions, and no modals', () => {
-  const { ctx, injections, registrations, effects } = makeContext();
+  const { ctx, registrations, effects } = makeContext();
   makePlugin().apply(ctx);
 
-  assert.equal(injections.length, 1);
-  for (const service of REQUIRED_SERVICES) {
-    assert.ok(injections[0].includes(service), `ctx.inject must request ${service}`);
-  }
-  // slots 必须走可选读取：列为必需会让没有渲染层的部署连 retry.lastTurn 都不注册。
-  assert.ok(!injections[0].includes('slots'), 'main injection must not require slots');
   assert.deepEqual(effects, ['dsh-retry: dictionaries', 'dsh-retry: retry.lastTurn']);
   assert.equal(registrations.length, 1);
 
