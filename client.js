@@ -630,17 +630,27 @@ window.__ModuleLoader__.load({
         // 插件管理器在插件详情页渲染 plugins.bundle.config，按包名 key 分发本包自己的
         // 配置页。槽位由插件管理器声明，声明出现后才注册；react 到这一步才解析，模块
         // 工厂不会因缺少 react 而失败。
-        ctx.slots.inject('plugins.bundle.config', () => {
-          const React = require('react');
-          return ctx.slots.register(
-            {
-              name: 'plugins.bundle.config',
-              key: 'dsh-retry',
-              locale: NS,
-            },
-            createSettingsView(React, { t, shortcuts }),
-          );
-        });
+        // 插件管理器只在设置镜像里存在本包 namespace 时才分发这个槽位，
+        // 因此注册包在 configForms.whileServed 里：namespace 出现即注册，消失即撤销。
+        const configForms = ctx.get('configForms');
+        const registerConfigPage = () =>
+          ctx.slots.inject('plugins.bundle.config', () => {
+            const React = require('react');
+            return ctx.slots.register(
+              {
+                name: 'plugins.bundle.config',
+                key: NS,
+                locale: NS,
+              },
+              createSettingsView(React, { t, shortcuts }),
+            );
+          });
+        if (configForms !== undefined && typeof configForms.whileServed === 'function') {
+          ctx.effect(() => configForms.whileServed([NS], registerConfigPage), 'dsh-retry: config page');
+        } else {
+          // 没有 configForms 的部署退化为直接注册：槽位本身仍由插件管理器声明。
+          ctx.effect(registerConfigPage, 'dsh-retry: config page');
+        }
       },
     };
   },

@@ -40,3 +40,23 @@ export function installRetry(ctx, createMessage) {
 export function apply(ctx) {
   installRetry(ctx, createUserMessage);
 }
+
+/**
+ * 插件 Config：让本包在设置镜像里拥有一个 namespace。
+ *
+ * 配置页挂在 `plugins.bundle.config` 槽位上，该槽位按包名分发，而分发前提是设置镜像
+ * 里存在本包的 namespace（`configForms.whileServed([ns], ...)` 据此判断）。没有 Config
+ * 导出的插件不会出现在镜像里，配置页永远不会注册。
+ *
+ * 这里手写符合 Schemastery 原生协议的对象（`Symbol.for('schemastery')` 为真、`type`
+ * 是字符串、`meta` 是对象），不引入 schemastery 依赖：插件以 `link:` 形态安装时解析
+ * 不到 DSH 运行时包，静态 import 会让整包加载失败。
+ *
+ * 当前没有用户可配字段——快捷键偏好由 `ctx.shortcuts` 自己持久化，不属于插件配置。
+ */
+export const Config = {
+  type: 'object',
+  meta: { default: {}, description: '快捷键偏好由 DSH 的快捷键注册表保存，本插件没有额外配置项。' },
+  [Symbol.for('schemastery')]: true,
+  dict: {},
+};

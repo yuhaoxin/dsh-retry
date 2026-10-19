@@ -145,7 +145,7 @@ test('registers retry.lastTurn with desktop-only Alt+R defaults, page/editable r
   const { ctx, registrations, effects } = makeContext();
   makePlugin().apply(ctx);
 
-  assert.deepEqual(effects, ['dsh-retry: dictionaries', 'dsh-retry: retry.lastTurn']);
+  assert.deepEqual(effects, ['dsh-retry: dictionaries', 'dsh-retry: retry.lastTurn', 'dsh-retry: config page']);
   assert.equal(registrations.length, 1);
 
   const command = registrations[0];
