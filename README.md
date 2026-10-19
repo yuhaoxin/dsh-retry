@@ -2,17 +2,36 @@
 
 DeepSeek Harness 插件：重试上一条失败或被中断的助手回合，快捷键可在设置里修改。
 
-行为对齐 [oh-my-pi](https://github.com/can1357/oh-my-pi) 的重试语义（`/retry`、`app.retry`），但不复制其代码。
+行为对齐 [oh-my-pi](https://github.com/can1357/oh-my-pi) 的重试语义（`/retry`、`app.retry`），不复制其代码。
 
-## 状态
+## 用法
 
-插件尚未实现，当前只有可安装的 bundle 骨架。设计决策、待定项与实现任务记在仓库 issue tracker 上，地图 issue 标题为「Map: dsh-retry 重试与快捷键插件」（标签 `wayfinder:map`）；动手前先读它。
+- 命令：`/retry`，出现在命令面板与斜杠列表里。
+- 快捷键：默认 `Alt+R`，在「设置」→「通用」→「快捷键」里可改，改完立即生效；与已有绑定冲突时界面会提示。
+- 没有可重试的回合时返回 `Nothing to retry.`，不产生任何副作用。
 
-已经定下来的边界（依据见 `research/` 下的研究报告）：
+## 重试做了什么
 
-- 默认快捷键计划为 `Alt+R`，只声明 desktop 三个平台。DSH 的键位注册表要求每个 `${runtime}:${platform}` 只给一个默认绑定，且无修饰键的组合（如 `F5`）在 `desktop:linux` 与 web 上会被校验拒绝，因此 `F5` 不能作为默认键。
-- Web profile 只接受少数组合（`primary+Slash`、`primary+shift+Comma`、`primary+shift+Period` 等），`Alt+R` 在 Web 上无法绑定，默认不声明绑定。
-- DSH 没有删除或改写会话历史的接口，`oh-my-pi` 那种"删掉失败回合再重放"的语义在 DSH 不能照搬；具体取舍见地图上的拷问票。
+DSH 没有重放上一轮的接口，也没有「不新增消息就唤醒回合」的入口。本插件的重试是：向当前会话注入一条说明重试意图的用户消息并唤醒 agent，模型在新回合重新生成。
+
+- 该消息的来源标记为 `cordis-host-runner`，客户端把它渲染成 **turn-trigger 卡片**，不是冒充真人输入的用户气泡。
+- 判定只看最后一条 `turn/end` 的结束原因：`error`（请求失败）、`aborted`（被中止）、`interrupted`（崩溃恢复）可重试；`completed`、`blocked`、`max-tokens`、`forked` 不可重试；回合仍在进行时不可重试。
+- 命令返回成功只表示消息已进入 inbox，模型请求是异步执行的。
+
+### 与 oh-my-pi 的差异
+
+| 方面 | oh-my-pi | 本插件 |
+| --- | --- | --- |
+| 失败回合的助手消息 | 从活动上下文删除后重放 | 不能删除；DSH 的 surface 历史只追加 |
+| 中断留下的半截输出 | 可清理持久化分支 | 仍会进入重试请求，模型能看到 |
+| 键位配置 | 只能改 `keybindings.yml`，无冲突提示 | 设置界面里改，带冲突提示 |
+| 默认键 | `F5` + `Alt+R` | 只有 `Alt+R`（DSH 每个 profile 只允许一个默认绑定） |
+
+## 键位限制
+
+- 默认只声明 desktop 三个平台。Web profile 的键位白名单只接受 `primary+Slash`、`primary+shift+Comma`、`primary+shift+Period` 等少数组合，`Alt+R` 在 Web 上无法绑定，因此不声明 Web 默认值。
+- `F5` 不能作为默认键：无修饰键的组合在 `desktop:linux` 与全部 Web profile 上会被注册表以 `modifier-required` 拒绝，而注册表对已声明的每个平台逐个校验。需要 `F5` 时可在设置里自行改键（仅 desktop macOS/Windows 允许无修饰键组合）。
+- 终端区不抢键：动作只在 `page` 与 `editable` 区域生效。
 
 ## 安装
 
@@ -30,15 +49,25 @@ cd dsh-retry
 dsh plugin --profile desktop add "$PWD"
 ```
 
-把 `desktop` 换成实际使用的 profile。也可以由已运行的 DSH 自带插件管理器安装同一个目录或包。安装后刷新窗口；改过 `index.js` 后需要重启 DSH 进程。
+把 `desktop` 换成实际使用的 profile。也可以由已运行的 DSH 自带插件管理器安装同一个目录或包。安装后刷新窗口；改过 `index.js` 或 `src/host/**` 后需要重启 DSH 进程。
+
+Host 半身在运行时动态加载 `@deepseek-ai/dsh-llm` 取 `createUserMessage`。若安装形态解析不到该包，插件加载会报错且命令不注册——这是有意的显式失败，避免留下「按键无反应」的半成品。
 
 ## 开发
 
-不需要构建步骤：`client.js` 是直接提交进仓库的客户端模块，`index.js` 是 Host 代码。
+不需要构建步骤：`client.js` 是直接提交进仓库的客户端模块，`index.js` 与 `src/host/**` 是 Host 代码。
 
 ```bash
 node --test test/
 ```
+
+## 已知限制
+
+- 重试不删除历史：中断留下的半截助手输出仍会进入重试请求。
+- 无重试次数上限，也没有防连击；连续按会连续追加消息。
+- 只在主视图持有的会话上生效；没有主会话时按键返回提示而不触发。
+- Web 端没有默认键位，只能通过命令面板触发。
+- 没有「重放失败工具调用批次」的能力（oh-my-pi 的第二层语义）。
 
 ## 许可
 
