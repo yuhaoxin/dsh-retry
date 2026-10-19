@@ -162,13 +162,22 @@ function makeContext({ recording, edit, catalog = [], config = { revision: 'rev-
       return () => {};
     },
   };
+  const sessionsStub = { list: { getSnapshot: () => ({ byId: {} }) } };
+  const commandsStub = { execute: async () => ({ ok: true, value: {} }) };
   const ctx = {
     shortcuts,
-    sessions: { list: { getSnapshot: () => ({ byId: {} }) } },
-    remote: { commands: { execute: async () => ({ ok: true, value: {} }) } },
+    sessions: sessionsStub,
+    remote: { commands: commandsStub },
     locale: { register: () => () => {}, bind: () => makeT() },
     slots,
     effect: (callback) => callback(),
+    // 插件只声明 slots 与 locale，其余服务在 apply 里用 ctx.get 可选读取。
+    get(name) {
+      if (name === 'shortcuts') return shortcuts;
+      if (name === 'sessions') return sessionsStub;
+      if (name === 'remote.commands') return commandsStub;
+      return undefined;
+    },
   };
   return { ctx, sections, shortcuts, calls };
 }

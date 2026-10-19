@@ -104,6 +104,13 @@ function makeContext({ hasSession = true, execute } = {}) {
     locale,
     effect,
     slots,
+    // 插件只声明 slots 与 locale，其余服务在 apply 里用 ctx.get 可选读取。
+    get(name) {
+      if (name === 'shortcuts') return shortcuts;
+      if (name === 'sessions') return sessions;
+      if (name === 'remote.commands') return remote.commands;
+      return undefined;
+    },
   };
 
   return {
@@ -125,12 +132,12 @@ function makePlugin() {
   });
 }
 
-test('client bundle declares every service on the plugin so cordis gates activation', () => {
+test('client bundle only hard-requires the renderer and locale services', () => {
   assert.equal(loaded.id, 'dsh-retry');
   const plugin = makePlugin();
-  // 声明式依赖：服务未就绪时 apply 不跑，加载器把条目报成等待中，
-  // 配置页不会因为 apply 半途跳过而永久缺席。
-  assert.deepEqual(plugin.inject, [...REQUIRED_SERVICES, 'slots']);
+  // 只把 shipped 组合必然提供的两项列为硬依赖；shortcuts / sessions / remote.commands
+  // 用 ctx.get 可选读取，缺一项只失去对应能力，不会让整个插件停在 pending。
+  assert.deepEqual(plugin.inject, ['slots', 'locale']);
   assert.equal(typeof plugin.apply, 'function');
 });
 

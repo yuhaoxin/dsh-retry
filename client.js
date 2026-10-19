@@ -568,29 +568,34 @@ window.__ModuleLoader__.load({
   id: 'dsh-retry',
   factory(require) {
     return {
-      // 全部依赖都声明在插件上：cordis 在服务齐备前不调 apply，缺服务时加载器把条目报成
-      // 等待中，而不是让 apply 半途静默跳过。client 半身只跑在 web，slots 由 ui-renderer
-      // 提供，其余四个由会话 / 命令 / 词典服务提供。
-      inject: ['shortcuts', 'sessions', 'remote', 'remote.commands', 'locale', 'slots'],
+      // 只声明渲染层与词典：这两项是 shipped 组合的固定成员。其余服务用 ctx.get 可选读取，
+      // 避免某个部署缺一项就让整个插件体停在 pending——那样快捷键与配置页都不会注册。
+      inject: ['slots', 'locale'],
       /** 纯逻辑句柄：无构建步骤，node:test 从这里断言行数据、edit 参数与降级判断。 */
       internals: { shortcutRows, shortcutEdit, beginRecording, feedbackFor, parseBindingText, recordedBinding, SHORTCUT_IDS },
       apply(ctx) {
         ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-retry: dictionaries');
         const t = ctx.locale.bind(NS);
 
+        // 可选服务：缺失时只失去对应能力，不影响插件激活。
+        const shortcuts = ctx.get('shortcuts');
+        const sessions = ctx.get('sessions');
+        const commands = ctx.get('remote.commands');
+
         /**
          * 触发 Host /retry。run 是 fire-and-forget，失败在控制台报告：
          * 命令未被 Host 注册、或调用被拒绝，都不会让按键处理器抛错。
          */
         const retryLastTurn = async (sessionId) => {
-          const result = await ctx.remote.commands.execute(sessionId, '/retry', []);
+          const result = await commands.execute(sessionId, '/retry', []);
           if (!result.ok) throw new Error(`/retry rejected: ${result.error.code}: ${result.error.message}`);
           if (result.value === undefined) throw new Error('/retry is not registered by the Host half');
         };
 
+        if (shortcuts === undefined) return;
         ctx.effect(
           () =>
-            ctx.shortcuts.register({
+            shortcuts.register({
               id: 'retry.lastTurn',
               label: () => t('shortcut.retryLastTurn'),
               aliases: ['retry'],
@@ -605,7 +610,7 @@ window.__ModuleLoader__.load({
               regions: ['page', 'editable'],
               modals: [],
               resolve: () => {
-                const sessionId = mainSessionId(ctx);
+                const sessionId = mainSessionId({ sessions });
                 if (sessionId === undefined) {
                   return { status: 'blocked', reason: t('shortcut.noSession') };
                 }
@@ -633,7 +638,7 @@ window.__ModuleLoader__.load({
               key: 'dsh-retry',
               locale: NS,
             },
-            createSettingsView(React, { t, shortcuts: ctx.shortcuts }),
+            createSettingsView(React, { t, shortcuts }),
           );
         });
       },
