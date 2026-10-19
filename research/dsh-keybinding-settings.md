@@ -186,7 +186,7 @@ loop 调用点逐字：`const action = await this.dispatch.waterfall("agent/requ
 
 ## 7. 真机未证
 
-1. **Client inspect 本会话全部超时**，Slot 树与 Client Service 清单未经 live inspect 核实；结论来自随包生成的目录（`dsh-cordis-client-runner/lib/client.js` 的 `CLIENT_SLOT_API`，100 条）与真实插件源码。
+1. **Client inspect 在子代理会话全部超时**（Lead 会话已重跑成功，见文末补充节）；结论来自随包生成的目录（`dsh-cordis-client-runner/lib/client.js` 的 `CLIENT_SLOT_API`，100 条）与真实插件源码。
 2. asar 内 `lib/types/*.d.ts` 不存在；TS 签名取自生成的 `typert.host.js` / `api-catalog.js`，未与上游源码交叉校验。
 3. `settings.section` 的 `label` thunk 重读时机、第三方 section 在设置导航里拿到的图标（id 闭集，第三方只得通用齿轮）未真机验证。
 4. `autoGenerate` 无消费者属**否定性结论**（README 原文 + 全树搜不到渲染器），未在运行实例上确认 `settings.describe()` 对第三方 entry 的实际返回。
@@ -195,3 +195,13 @@ loop 调用点逐字：`const action = await this.dispatch.waterfall("agent/requ
 7. 重试是否有 loop 侧第二道上限未证实（只确证 `dsh-llm-retry` 侧默认 5）。
 8. 客户端除 `remote.session.prompt` 外是否还有别的触发模型请求的路径未穷尽（PTC `run_code`、subagent prompt 都绕过 session 面）。
 9. DSH 是否给"重放上一轮"留了隐藏入口未证实（`ChatNodeOwnerProps.forkAt` 与 `message.branch` 是"新开分支"，不是重放）。
+
+## 补充：Lead 会话的 live inspect 复核（2026-10-19）
+
+子代理会话里 Client inspect 全部超时；在 Lead 会话重跑成功，以下为 live 结论，修正上文第 7 节第 1 条。
+
+- `settings.section`（list, root）契约与生成目录一致；实时占用者：`account`(-10)、`general`(0)、`models`(10)、`plugins`(15)、`agent-presets`(20)、`dsh-notify-me`(45)、`better-sidebar`(100)。
+- **`settings.general.item` 里已经有 shipped 的 `shortcuts` 行（order 16）**，由 `ui-settings-general` 注册并喂 `ctx.shortcuts.catalog`：该包 `lib/client.js:1070` 注入 `"shortcuts"`、`:1135` 传 `shortcuts: ctx.shortcuts.catalog`。因此注册到 `ctx.shortcuts` 的动作会自动出现在「设置」→「通用」→「快捷键」，**不需要自写设置页**。
+- Client Service 目录（inspect）**不含 `shortcuts`**（查询报 `no catalogued Service named "shortcuts"`），但源码与 shipped 插件用法证实它可用：`ctx.inject(["shortcuts"], (scope) => scope.shortcuts.register(...))`，见 `ui-settings-general:1070/1187`、`ui-shortcuts:1095`、`ui-theme:1955`、`ui-conversation:19609`、`ui-approval:320`、`sidebar-browser:1547`、`sidebar-files:948`。inspect 目录只覆盖有生成契约的 Service，`shortcuts` 不在其中。
+- 键位校验边界（`register()` 对 6 个 profile 逐个校验）：`bindingIssue` 在 desktop macos/windows 直接返回 null；`F5` 这类无修饰键绑定在 `desktop:linux` 与全部 web profile 上被 `modifier-required` 拒绝；web 只允许 `primary+Slash`、`primary+shift+Comma`、`primary+shift+Period`（win/mac 另允许 3–4 修饰键、含 `primary` 的两修饰键组合）。`defaults` 是每个 profile **一个** binding，不支持一个动作多默认键。
+- `alt+r` 与现有 shipped 默认不冲突：唯一含 `KeyR` 的是 `sidebar.right.toggle` 的 `primary+alt+KeyR`，修饰键集合不同，`overlappingBindings` 判定不重叠。
