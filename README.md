@@ -51,7 +51,9 @@ dsh plugin --profile desktop add "$PWD"
 
 把 `desktop` 换成实际使用的 profile。也可以由已运行的 DSH 自带插件管理器安装同一个目录或包。安装后刷新窗口；改过 `index.js` 或 `src/host/**` 后需要重启 DSH 进程。
 
-Host 半身在运行时动态加载 `@deepseek-ai/dsh-llm` 取 `createUserMessage`。若安装形态解析不到该包，插件加载会报错且命令不注册——这是有意的显式失败，避免留下「按键无反应」的半成品。
+改动 `client.js`（含设置页）后同样要刷新窗口：已打开的页面持有加载时的模块图快照，服务端虽已下发新 bundle，页面不会自行重建。
+
+Host 半身不依赖任何 `@deepseek-ai/*` 包：插件以 `link:` 形态安装时，运行时只在插件自己 `peerDependencies` 列出包名时才把解析重定向到安装副本，而本插件不声明 peer（避免版本门禁阻断安装）。user 消息按会话层校验契约在本地构造，见 `src/host/user-message.js`。
 
 ## 开发
 
