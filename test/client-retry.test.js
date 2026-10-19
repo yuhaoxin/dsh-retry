@@ -15,7 +15,6 @@ await import('../client.js');
 const SESSION_ID = 'session-1';
 const REQUIRED_SERVICES = ['shortcuts', 'sessions', 'remote', 'remote.commands', 'locale'];
 /** 设置页走独立子注入，slots 不在主注入里。 */
-const SETTINGS_SERVICES = ['slots'];
 
 /**
  * 假客户端上下文：effect 立即执行回调，ctx.inject 立即把所需服务交给插件体。
@@ -106,6 +105,10 @@ function makeContext({ hasSession = true, execute } = {}) {
   };
   const ctx = {
     effect,
+    // slots 走可选读取：apply 时探测 ctx.get('slots')。
+    get(name) {
+      return name === 'slots' ? slots : undefined;
+    },
     inject(deps, callback) {
       injections.push(deps);
       callback(scoped);
@@ -143,15 +146,12 @@ test('registers retry.lastTurn with desktop-only Alt+R defaults, page/editable r
   const { ctx, injections, registrations, effects } = makeContext();
   makePlugin().apply(ctx);
 
-  assert.equal(injections.length, 2);
+  assert.equal(injections.length, 1);
   for (const service of REQUIRED_SERVICES) {
     assert.ok(injections[0].includes(service), `ctx.inject must request ${service}`);
   }
-  // slots 必须只在子注入里：渲染层缺失时重试动作仍要可用。
+  // slots 必须走可选读取：列为必需会让没有渲染层的部署连 retry.lastTurn 都不注册。
   assert.ok(!injections[0].includes('slots'), 'main injection must not require slots');
-  for (const service of SETTINGS_SERVICES) {
-    assert.ok(injections[1].includes(service), `nested injection must request ${service}`);
-  }
   assert.deepEqual(effects, ['dsh-retry: dictionaries', 'dsh-retry: retry.lastTurn']);
   assert.equal(registrations.length, 1);
 

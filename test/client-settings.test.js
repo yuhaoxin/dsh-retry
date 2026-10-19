@@ -178,6 +178,10 @@ function makeContext({ recording, edit, catalog = [], config = { revision: 'rev-
   };
   const ctx = {
     effect: (callback) => callback(),
+    // slots 走可选读取：apply 时探测 ctx.get('slots')。
+    get(name) {
+      return name === 'slots' ? slots : undefined;
+    },
     inject(deps, callback) {
       callback(scoped);
     },

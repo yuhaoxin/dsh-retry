@@ -612,13 +612,14 @@ window.__ModuleLoader__.load({
           // settings.section 由设置壳声明；声明出现后才注册页面。react 到这一步才解析：
           // 非 web 环境不加载渲染层，模块工厂也不会因缺少 react 而失败。
           //
-          // 设置页走独立子注入而不是并入上面的主注入：cordis 的 inject 是硬门禁，把 slots
-          // 放进主注入会让渲染层成为整个插件体的前置条件，没有渲染层的部署连 retry.lastTurn
-          // 都不会注册。子注入缺失时只失去设置页，重试动作照常可用。
-          scope.inject(['slots'], (slotScope) => {
-            slotScope.slots.inject('settings.section', () => {
+          // slots 用可选读取而不是主 inject：cordis 的插件 inject 是硬门禁，把 slots 列为
+          // 必需会让没有渲染层的部署连 retry.lastTurn 都不注册。这里在 apply 时探测一次，
+          // 缺失就只失去设置页，重试动作照常可用。
+          const slots = ctx.get('slots');
+          if (slots !== undefined) {
+            slots.inject('settings.section', () => {
               const React = require('react');
-              return slotScope.slots.register(
+              return slots.register(
                 {
                   name: 'settings.section',
                   id: 'dsh-retry',
@@ -629,7 +630,7 @@ window.__ModuleLoader__.load({
                 createSettingsView(React, { t, shortcuts: scope.shortcuts }),
               );
             });
-          });
+          }
         });
       },
     };
